@@ -18,7 +18,7 @@ namespace MartinMaestri.AnimationSpritePreview
     // queued (DopeSheetEditor.m_PointRenderer buffers) and redraws them scaled to fill the key rect.
     // The row height is set from a slider the overlay places in the bottom-left toolbar, next to the
     // Dopesheet/Curves toggles, beside a toggle that centers each sprite on its keyframe instead of
-    // starting it there (Unity's left anchor).
+    // starting it there (Unity's left anchor); CenteredKeyClicks keeps clicks on what is drawn then.
     [InitializeOnLoad]
     internal static class AnimationSpritePreviewSize
     {
@@ -52,11 +52,14 @@ namespace MartinMaestri.AnimationSpritePreview
         private static FieldInfo elementColor;
         private static FieldInfo elementTexture;
 
+        internal static bool Centered => centered;
+
         static AnimationSpritePreviewSize()
         {
             centered = EditorPrefs.GetBool(CenteredPrefKey, false);
             Apply(EditorPrefs.GetFloat(PrefKey, DefaultHeight));
             EditorApplication.update += AttachOverlays;
+            EditorApplication.update += CenteredKeyClicks.KeepHooked;
         }
 
         private static void Apply(float height)
@@ -143,8 +146,7 @@ namespace MartinMaestri.AnimationSpritePreview
                 {
                     name = CenterToggleName,
                     text = "Center",
-                    tooltip = "Center each sprite on its keyframe instead of starting it there.\n"
-                        + "Clicks still select keys where Unity places them (starting at the keyframe).",
+                    tooltip = "Center each sprite on its keyframe instead of starting it there",
                     value = centered,
                 };
                 centerToggle.style.flexShrink = 0;
@@ -154,7 +156,8 @@ namespace MartinMaestri.AnimationSpritePreview
                 bar.Add(slider);
                 bar.Add(centerToggle);
 
-                var overlay = new IMGUIContainer(() => DrawOverlay(window, bar, slider, centerToggle))
+                CenteredKeyClicks clicks = CenteredKeyClicks.For(window);
+                var overlay = new IMGUIContainer(() => DrawOverlay(window, clicks, bar, slider, centerToggle))
                 {
                     name = OverlayName,
                     pickingMode = PickingMode.Ignore,
@@ -165,7 +168,7 @@ namespace MartinMaestri.AnimationSpritePreview
             }
         }
 
-        private static void DrawOverlay(AnimationWindow window, VisualElement bar, Slider slider, Toggle centerToggle)
+        private static void DrawOverlay(AnimationWindow window, CenteredKeyClicks clicks, VisualElement bar, Slider slider, Toggle centerToggle)
         {
             if (Event.current.type != EventType.Repaint || window == null)
                 return;
@@ -173,6 +176,7 @@ namespace MartinMaestri.AnimationSpritePreview
             // Shown only while the dopesheet is, sized to the room the hierarchy splitter leaves beside
             // the Dopesheet/Curves toggles (re-read every repaint).
             bool dopeSheetShown = PlaceControls(window, bar, slider, centerToggle);
+            clicks.BeginFrame(Rect.zero);
             if (!dopeSheetShown)
                 return;
 
@@ -185,6 +189,8 @@ namespace MartinMaestri.AnimationSpritePreview
 
             // Same clip DopeSheetEditor.OnGUI pushes, so buffered key rects land where Unity drew them.
             GUI.BeginClip(area, -scroll, Vector2.zero, false);
+            clicks.BeginFrame(area);
+            Vector2 toWindow = area.position - scroll;
 
             object unselected = Get(pointRenderer, "m_UnselectedKeysDrawBuffer");
             object selected = Get(pointRenderer, "m_SelectedKeysDrawBuffer");
@@ -192,12 +198,12 @@ namespace MartinMaestri.AnimationSpritePreview
 
             // All backgrounds first, then all sprites: drawing them per key would let a key's opaque
             // background hide the transparent pixels of an overlapping neighbor's sprite.
-            bool drewAny = DrawKeys(unselected, false, true);
-            drewAny |= DrawKeys(selected, true, true);
-            drewAny |= DrawKeys(dragDrop, false, true);
-            DrawKeys(unselected, false, false);
-            DrawKeys(selected, true, false);
-            DrawKeys(dragDrop, false, false);
+            bool drewAny = DrawKeys(unselected, false, true, null, toWindow);
+            drewAny |= DrawKeys(selected, true, true, null, toWindow);
+            drewAny |= DrawKeys(dragDrop, false, true, null, toWindow);
+            DrawKeys(unselected, false, false, clicks, toWindow);
+            DrawKeys(selected, true, false, clicks, toWindow);
+            DrawKeys(dragDrop, false, false, null, toWindow);
 
             // The opaque thumbnails cover the window's playhead, so redraw it on top.
             if (drewAny && Get(state, "currentTime") is float time)
@@ -242,7 +248,8 @@ namespace MartinMaestri.AnimationSpritePreview
                 element.style.display = display;
         }
 
-        private static bool DrawKeys(object buffer, bool selected, bool backgroundPass)
+        // clicks: where to record each drawn key for click remapping (null for drag-and-drop ghosts).
+        private static bool DrawKeys(object buffer, bool selected, bool backgroundPass, CenteredKeyClicks clicks, Vector2 toWindow)
         {
             if (!(buffer is IList elements) || elements.Count == 0)
                 return false;
@@ -287,9 +294,18 @@ namespace MartinMaestri.AnimationSpritePreview
 
                 if (selected)
                     DrawOutline(rect, SelectedOutlineColor);
+
+                // Unity hit-tests the preview rect grown back by its 2 px inset (GetKeyframeRect).
+                if (centered && clicks != null)
+                    clicks.AddKey(Grow(rect, 2f, toWindow), Grow(unityRect, 2f, toWindow));
             }
 
             return true;
+        }
+
+        private static Rect Grow(Rect rect, float by, Vector2 offset)
+        {
+            return new Rect(rect.x - by + offset.x, rect.y - by + offset.y, rect.width + 2f * by, rect.height + 2f * by);
         }
 
         private static void DrawOutline(Rect rect, Color color)

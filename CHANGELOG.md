@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.2.0] - 2026-10-13
+
+- With **Center** on, clicks, drags and right-clicks now hit keys where their sprites are drawn: clicking anywhere on a centered sprite selects it, and the space right of it no longer selects a key that isn't drawn there.
+
 ## [1.1.0] - 2026-10-13
 
 - The slider is now labeled **Sprite Size**.

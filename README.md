@@ -16,7 +16,7 @@ https://github.com/MartinMaestri/unity-animation-sprite-preview.git
 Or add it to `Packages/manifest.json`:
 
 ```json
-"com.martinmaestri.animation-sprite-preview": "https://github.com/MartinMaestri/unity-animation-sprite-preview.git#1.1.0"
+"com.martinmaestri.animation-sprite-preview": "https://github.com/MartinMaestri/unity-animation-sprite-preview.git#1.2.0"
 ```
 
 Requires Unity 2021.3 or newer. Tested on Unity 6000.3.
@@ -37,11 +37,11 @@ It relies on Unity editor internals through reflection, so a future Unity versio
 - The row height is `AnimationWindowHierarchyGUI.k_DopeSheetRowHeightTall`, a `static readonly` field, overwritten on every domain reload.
 - Unity draws previews with `GUI.Label`, which never upscales a texture, so taller rows alone stop helping past the preview's native size. An IMGUI overlay added to each Animation window reads the previews the dopesheet just queued (`DopeSheetEditor.m_PointRenderer`) and redraws them scaled to fill each key, over an opaque background that hides Unity's smaller copy. Selected keys get a blue outline and the playhead is redrawn on top.
 - The property list on the left caches each row's position (`AnimationWindowHierarchyNode.topPixel`); the cache is cleared whenever the size changes so it re-lays out right away.
+- With **Center** on, Unity still hit-tests keys where it would have drawn them. The window's OnGUI, as its dock area calls it (`HostView.m_OnGUI`), is wrapped so mouse events over a drawn sprite are moved to the same spot inside the rect Unity tests for that key, and clicks over a spot where Unity has a key but nothing is drawn are moved past it. Drags keep the offset of the click that started them.
 
 ## Known limitations
 
 - The rectangle you drag to select keys is drawn under the enlarged previews.
-- With **Center** on, clicking and dragging still hit keys where Unity places them (starting at the keyframe), so the left half of a centered sprite doesn't select it.
 - The redrawn playhead is plain white (red while recording) and may not match Unity's exact color.
 
 ## License
