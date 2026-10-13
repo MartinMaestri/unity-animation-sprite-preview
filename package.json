@@ -1,0 +1,24 @@
+{
+  "name": "com.martinmaestri.animation-sprite-preview",
+  "version": "1.0.0",
+  "displayName": "Animation Sprite Preview",
+  "description": "Makes sprite keyframe previews in the Animation window readable for pixel art: a slider next to the Dopesheet/Curves toggles sets the sprite row height, and the previews are redrawn scaled to fill it with point filtering.",
+  "unity": "2021.3",
+  "author": {
+    "name": "Martin Maestri",
+    "email": "maestri.martin@gmail.com",
+    "url": "https://github.com/MartinMaestri"
+  },
+  "keywords": [
+    "animation",
+    "sprite",
+    "pixel art",
+    "dopesheet",
+    "editor"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MartinMaestri/unity-animation-sprite-preview.git"
+  }
+}
