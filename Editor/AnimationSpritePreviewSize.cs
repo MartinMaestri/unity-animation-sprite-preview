@@ -17,18 +17,27 @@ namespace MartinMaestri.AnimationSpritePreview
     // added to every Animation window that, after the dopesheet repaints, reads the thumbnails it just
     // queued (DopeSheetEditor.m_PointRenderer buffers) and redraws them scaled to fill the key rect.
     // The row height is set from a slider the overlay places in the bottom-left toolbar, next to the
-    // Dopesheet/Curves toggles.
+    // Dopesheet/Curves toggles, beside a toggle that centers each sprite on its keyframe instead of
+    // starting it there (Unity's left anchor).
     [InitializeOnLoad]
     internal static class AnimationSpritePreviewSize
     {
         private const string PrefKey = "MartinMaestri.AnimationSpritePreview.RowHeight";
+        private const string CenteredPrefKey = "MartinMaestri.AnimationSpritePreview.Centered";
         private const float DefaultHeight = 96f;
         private const float MinHeight = 36f;
         private const float MaxHeight = 200f;
         private const string OverlayName = "MartinMaestri.AnimationSpritePreview.Overlay";
+        private const string BarName = "MartinMaestri.AnimationSpritePreview.Bar";
         private const string SliderName = "MartinMaestri.AnimationSpritePreview.Slider";
-        private const float SliderMaxWidth = 170f;
-        private const float SliderMinWidth = 70f;
+        private const string CenterToggleName = "MartinMaestri.AnimationSpritePreview.CenterToggle";
+        private const string CenterMenuItem = "Center sprites on keyframes";
+        private const float BarMaxWidth = 240f;
+        // Room needed, as the pane narrows: label + slider + toggle, then slider + toggle, then the
+        // bare slider (the toggle stays reachable from the slider's context menu).
+        private const float FullBarMinWidth = 180f;
+        private const float NoLabelBarMinWidth = 116f;
+        private const float SliderOnlyMinWidth = 50f;
         // Two AnimEditor.kToggleButtonWidth buttons (Dopesheet, Curves) on the right of that toolbar.
         private const float ToolbarTogglesWidth = 2f * 80f;
         private const BindingFlags AnyInstance = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
@@ -38,12 +47,14 @@ namespace MartinMaestri.AnimationSpritePreview
         private static readonly Color RecordingPlayheadColor = new Color(1f, 0.25f, 0.25f, 0.9f);
 
         private static double nextWindowScan;
+        private static bool centered;
         private static FieldInfo elementPosition;
         private static FieldInfo elementColor;
         private static FieldInfo elementTexture;
 
         static AnimationSpritePreviewSize()
         {
+            centered = EditorPrefs.GetBool(CenteredPrefKey, false);
             Apply(EditorPrefs.GetFloat(PrefKey, DefaultHeight));
             EditorApplication.update += AttachOverlays;
         }
@@ -67,6 +78,16 @@ namespace MartinMaestri.AnimationSpritePreview
                 window.rootVisualElement.Q<Slider>(SliderName)?.SetValueWithoutNotify(height);
                 InvalidateHierarchyRowPositions(window);
             }
+            InternalEditorUtility.RepaintAllViews();
+        }
+
+        private static void SetCentered(bool value)
+        {
+            centered = value;
+            EditorPrefs.SetBool(CenteredPrefKey, value);
+
+            foreach (AnimationWindow window in Resources.FindObjectsOfTypeAll<AnimationWindow>())
+                window.rootVisualElement.Q<Toggle>(CenterToggleName)?.SetValueWithoutNotify(value);
             InternalEditorUtility.RepaintAllViews();
         }
 
@@ -95,38 +116,63 @@ namespace MartinMaestri.AnimationSpritePreview
                 if (root.Q(OverlayName) != null)
                     continue;
 
-                var slider = new Slider("Sprites", MinHeight, MaxHeight)
+                var bar = new VisualElement { name = BarName };
+                bar.style.position = Position.Absolute;
+                bar.style.bottom = 1;
+                bar.style.left = 4;
+                bar.style.flexDirection = FlexDirection.Row;
+                bar.style.display = DisplayStyle.None;
+
+                var slider = new Slider("Sprite Size", MinHeight, MaxHeight)
                 {
                     name = SliderName,
-                    tooltip = "Size of the sprite keyframe previews in the dopesheet",
+                    tooltip = "Sprite Size: height of the sprite keyframe previews in the dopesheet",
                     value = EditorPrefs.GetFloat(PrefKey, DefaultHeight),
                 };
                 slider.labelElement.style.minWidth = 0;
-                slider.style.position = Position.Absolute;
-                slider.style.bottom = 1;
-                slider.style.left = 4;
-                slider.style.display = DisplayStyle.None;
+                slider.style.flexGrow = 1;
+                slider.style.flexShrink = 1;
                 slider.RegisterValueChangedCallback(evt => Apply(Mathf.Round(evt.newValue)));
+                // Reachable from here too when the pane is too narrow to show the toggle.
+                slider.AddManipulator(new ContextualMenuManipulator(evt => evt.menu.AppendAction(
+                    CenterMenuItem,
+                    _ => SetCentered(!centered),
+                    _ => centered ? DropdownMenuAction.Status.Checked : DropdownMenuAction.Status.Normal)));
 
-                var overlay = new IMGUIContainer(() => DrawOverlay(window, slider))
+                var centerToggle = new Toggle
+                {
+                    name = CenterToggleName,
+                    text = "Center",
+                    tooltip = "Center each sprite on its keyframe instead of starting it there.\n"
+                        + "Clicks still select keys where Unity places them (starting at the keyframe).",
+                    value = centered,
+                };
+                centerToggle.style.flexShrink = 0;
+                centerToggle.style.marginLeft = 6;
+                centerToggle.RegisterValueChangedCallback(evt => SetCentered(evt.newValue));
+
+                bar.Add(slider);
+                bar.Add(centerToggle);
+
+                var overlay = new IMGUIContainer(() => DrawOverlay(window, bar, slider, centerToggle))
                 {
                     name = OverlayName,
                     pickingMode = PickingMode.Ignore,
                 };
                 overlay.StretchToParentSize();
                 root.Add(overlay);
-                root.Add(slider);
+                root.Add(bar);
             }
         }
 
-        private static void DrawOverlay(AnimationWindow window, Slider slider)
+        private static void DrawOverlay(AnimationWindow window, VisualElement bar, Slider slider, Toggle centerToggle)
         {
             if (Event.current.type != EventType.Repaint || window == null)
                 return;
 
             // Shown only while the dopesheet is, sized to the room the hierarchy splitter leaves beside
             // the Dopesheet/Curves toggles (re-read every repaint).
-            bool dopeSheetShown = PlaceSlider(window, slider);
+            bool dopeSheetShown = PlaceControls(window, bar, slider, centerToggle);
             if (!dopeSheetShown)
                 return;
 
@@ -168,7 +214,7 @@ namespace MartinMaestri.AnimationSpritePreview
             GUI.EndClip();
         }
 
-        private static bool PlaceSlider(AnimationWindow window, Slider slider)
+        private static bool PlaceControls(AnimationWindow window, VisualElement bar, Slider slider, Toggle centerToggle)
         {
             object animEditor = Get(window, "animEditor");
             object state = Get(animEditor, "state");
@@ -177,16 +223,23 @@ namespace MartinMaestri.AnimationSpritePreview
 
             // The dopesheet starts right where the hierarchy pane ends.
             float hierarchyWidth = dopeSheetShown ? ((Rect)Get(Get(animEditor, "dopeSheetEditor"), "drawRect")).x : 0f;
-            float width = Mathf.Min(SliderMaxWidth, hierarchyWidth - ToolbarTogglesWidth - 12f);
-            bool sliderShown = dopeSheetShown && width >= SliderMinWidth;
+            float width = Mathf.Min(BarMaxWidth, hierarchyWidth - ToolbarTogglesWidth - 12f);
+            bool barShown = dopeSheetShown && width >= SliderOnlyMinWidth;
 
-            DisplayStyle display = sliderShown ? DisplayStyle.Flex : DisplayStyle.None;
-            if (slider.style.display != display)
-                slider.style.display = display;
-            if (sliderShown && !Mathf.Approximately(slider.style.width.value.value, width))
-                slider.style.width = width;
+            SetDisplay(bar, barShown);
+            SetDisplay(slider.labelElement, width >= FullBarMinWidth);
+            SetDisplay(centerToggle, width >= NoLabelBarMinWidth);
+            if (barShown && !Mathf.Approximately(bar.style.width.value.value, width))
+                bar.style.width = width;
 
             return dopeSheetShown;
+        }
+
+        private static void SetDisplay(VisualElement element, bool shown)
+        {
+            DisplayStyle display = shown ? DisplayStyle.Flex : DisplayStyle.None;
+            if (element.style.display != display)
+                element.style.display = display;
         }
 
         private static bool DrawKeys(object buffer, bool selected, bool backgroundPass)
@@ -210,12 +263,19 @@ namespace MartinMaestri.AnimationSpritePreview
                 if (!(elementTexture.GetValue(element) is Texture2D texture))
                     continue;
 
-                Rect rect = (Rect)elementPosition.GetValue(element);
+                // Unity's rect starts 1 px right of the keyframe's time (DopeSheetEditor: the pptr key
+                // offset of -1 plus the preview's 2 px inset), so centering shifts it left by half its
+                // width plus that pixel.
+                Rect unityRect = (Rect)elementPosition.GetValue(element);
+                Rect rect = unityRect;
+                if (centered)
+                    rect.x -= rect.width * 0.5f + 1f;
 
-                // Hide Unity's thumbnail, which is drawn at the preview's native size in the corner.
+                // Hide Unity's thumbnail, which is drawn at the preview's native size in the corner of
+                // its own rect, so when centered the background spans both rects.
                 if (backgroundPass)
                 {
-                    EditorGUI.DrawRect(rect, background);
+                    EditorGUI.DrawRect(Rect.MinMaxRect(rect.xMin, rect.yMin, unityRect.xMax, rect.yMax), background);
                     continue;
                 }
 

@@ -1,8 +1,8 @@
 {
   "name": "com.martinmaestri.animation-sprite-preview",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "displayName": "Animation Sprite Preview",
-  "description": "Makes sprite keyframe previews in the Animation window readable for pixel art: a slider next to the Dopesheet/Curves toggles sets the sprite row height, and the previews are redrawn scaled to fill it with point filtering.",
+  "description": "Makes sprite keyframe previews in the Animation window readable for pixel art: a Sprite Size slider next to the Dopesheet/Curves toggles sets the sprite row height, the previews are redrawn scaled to fill it with point filtering, and a Center toggle centers each sprite on its keyframe.",
   "unity": "2021.3",
   "author": {
     "name": "Martin Maestri",
